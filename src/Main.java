@@ -15,98 +15,215 @@ public class Main {
         );
 
         // 1) Populate fixed categories
-        List<MenuCategory> categories = List.of(
+        List<MenuCategory> fullCategories = List.of(
                 new MenuCategory("Starters"),
                 new MenuCategory("Main Courses"),
                 new MenuCategory("Desserts"),
                 new MenuCategory("Drinks")
         );
-
-        for (MenuCategory cat : categories) {
+        for (MenuCategory cat : fullCategories) {
             System.out.println("Enter items for category: " + cat.getName());
             while (true) {
                 System.out.print("  Item name (or 'done'): ");
-                String name = scanner.nextLine();
+                String name = scanner.nextLine().trim();
                 if ("done".equalsIgnoreCase(name)) break;
 
-                System.out.print("  Price: ");
-                double price = Double.parseDouble(scanner.nextLine());
+                double price = readPrice(scanner, "  Price: ");
 
-                System.out.println("  Allergy codes (comma‑separated):");
+                System.out.println("  Allergy codes (comma-separated):");
                 System.out.println("    A) Gluten   B) Dairy   C) Nuts   D) Shellfish   E) None");
-                Set<Allergy> allergies = new HashSet<>();
-                while (true) {
-                    System.out.print("  Enter codes [A–E]: ");
-                    String line = scanner.nextLine().toUpperCase();
-                    String[] codes = line.split("\\s*,\\s*");
-                    boolean hasNone = Arrays.asList(codes).contains("E");
-                    for (String code : codes) {
-                        Allergy a = allergyMap.get(code);
-                        if (a != null && a != Allergy.NONE) {
-                            allergies.add(a);
-                        }
-                    }
-                    if (hasNone) {
-                        allergies.clear();
-                    }
-                    if (!codes[0].isBlank()) break;
-                }
+                Set<Allergy> allergies = readAllergies(scanner, allergyMap);
 
                 cat.add(new MenuItem(name, price, allergies));
             }
         }
 
-        // 2) Build & show full menu
+        // Build full menu composite
         MenuCategory fullMenu = new MenuCategory("All Items");
-        categories.forEach(fullMenu::add);
+        fullCategories.forEach(fullMenu::add);
+
+        // 2) Show full menu
         System.out.println("\n=== Full Menu ===");
         fullMenu.print();
 
-        // 3) Build custom menu
-        MenuCategory customMenu = new MenuCategory("Your Custom Menu");
+        // 3) Prepare structured custom menu
+        MenuCategory customMenu = new MenuCategory("Your Final Menu");
+        Map<String,MenuCategory> customMap = new LinkedHashMap<>();
+        for (MenuCategory fc : fullCategories) {
+            MenuCategory cc = new MenuCategory(fc.getName());
+            // seed with initial items
+            for (MenuComponent item : fc.getChildren()) {
+                cc.add(item);
+            }
+            customMap.put(fc.getName(), cc);
+            customMenu.add(cc);
+        }
+
+        // 4) Browse & manage
+        outer:
         while (true) {
             System.out.print("\nEnter category to browse (or 'done'): ");
-            String c = scanner.nextLine();
+            String c = scanner.nextLine().trim();
             if ("done".equalsIgnoreCase(c)) break;
 
-            Optional<MenuComponent> oc = fullMenu.getChildren().stream()
-                    .filter(m -> m.getName().equalsIgnoreCase(c))
-                    .findFirst();
-            if (oc.isEmpty() || !(oc.get() instanceof MenuCategory chosenCat)) {
+            // find full & custom categories
+            MenuCategory fullCat = fullCategories.stream()
+                    .filter(cat -> cat.getName().equalsIgnoreCase(c))
+                    .findFirst().orElse(null);
+            if (fullCat == null) {
                 System.out.println("  → Unknown category.");
                 continue;
             }
-            System.out.println("\n  Items in " + chosenCat.getName() + ":");
-            chosenCat.print();
+            MenuCategory customCat = customMap.get(fullCat.getName());
 
-            System.out.print("  Enter item name to add (or 'back'): ");
-            String itemName = scanner.nextLine();
-            if ("back".equalsIgnoreCase(itemName)) continue;
+            // show the single, up-to-date menu for this category
+            System.out.println("\n== " + customCat.getName() + " ==");
+            customCat.print();
 
-            boolean added = chosenCat.getChildren().stream()
-                    .filter(i -> i instanceof MenuItem)
-                    .filter(i -> i.getName().equalsIgnoreCase(itemName))
-                    .peek(customMenu::add)
-                    .findFirst()
-                    .isPresent();
-            System.out.println(added
-                    ? "    + Added " + itemName
-                    : "    → Unknown item.");
+            // choose action
+            System.out.println("Actions: [A]dd  [E]dit  [R]emove  [B]ack");
+            System.out.print("Choose action: ");
+            String act = scanner.nextLine().trim().toUpperCase();
+
+            switch (act) {
+                case "A" -> {
+                    System.out.print("  Item name to add: ");
+                    String newName = scanner.nextLine().trim();
+                    MenuItem existing = fullCat.getChildren().stream()
+                            .filter(i -> i instanceof MenuItem)
+                            .map(i -> (MenuItem)i)
+                            .filter(i -> i.getName().equalsIgnoreCase(newName))
+                            .findFirst().orElse(null);
+                    if (existing != null) {
+                        customCat.add(existing);
+                        System.out.println("  + Added existing \"" + newName + "\"");
+                    } else {
+                        System.out.println("  \"" + newName + "\" is new; creating it.");
+                        double newPrice = readPrice(scanner, "    Price: ");
+                        System.out.println("    Allergy codes (comma-separated):");
+                        System.out.println("      A) Gluten   B) Dairy   C) Nuts   D) Shellfish   E) None");
+                        Set<Allergy> newAll = readAllergies(scanner, allergyMap);
+
+                        MenuItem mi = new MenuItem(newName, newPrice, newAll);
+                        fullCat.add(mi);
+                        customCat.add(mi);
+                        System.out.println("    + Created & added \"" + newName + "\"");
+                    }
+                }
+                case "E" -> {
+                    System.out.print("  Item name to edit: ");
+                    String eName = scanner.nextLine().trim();
+                    MenuItem toEdit = customCat.getChildren().stream()
+                            .filter(i -> i instanceof MenuItem)
+                            .map(i -> (MenuItem)i)
+                            .filter(i -> i.getName().equalsIgnoreCase(eName))
+                            .findFirst().orElse(null);
+                    if (toEdit == null) {
+                        System.out.println("  → No such item in your selection.");
+                    } else {
+                        double newPrice = readPrice(scanner, "    New price: ");
+                        System.out.println("    Allergy codes (comma-separated):");
+                        System.out.println("      A) Gluten   B) Dairy   C) Nuts   D) Shellfish   E) None");
+                        Set<Allergy> newAll = readAllergies(scanner, allergyMap);
+
+                        customCat.remove(toEdit);
+                        MenuItem updated = new MenuItem(toEdit.getName(), newPrice, newAll);
+                        customCat.add(updated);
+                        System.out.println("    * Edited \"" + eName + "\"");
+                    }
+                }
+                case "R" -> {
+                    System.out.print("  Item name to remove: ");
+                    String rName = scanner.nextLine().trim();
+                    MenuItem toRemove = customCat.getChildren().stream()
+                            .filter(i -> i instanceof MenuItem)
+                            .map(i -> (MenuItem)i)
+                            .filter(i -> i.getName().equalsIgnoreCase(rName))
+                            .findFirst().orElse(null);
+                    if (toRemove == null) {
+                        System.out.println("  → No such item in your selection.");
+                    } else {
+                        customCat.remove(toRemove);
+                        System.out.println("  - Removed \"" + rName + "\"");
+                    }
+                }
+                case "B" -> {
+                    continue outer;
+                }
+                default -> {
+                    System.out.println("  → Invalid action.");
+                }
+            }
         }
 
-        // 4) Show custom menu
-        System.out.println("\n=== Your Final Menu ===");
+        // 5) Show final structured menu
         customMenu.print();
 
-        // 5) Export
+        // 6) Export
         System.out.print("\nChoose export format [1] PlainText  [2] JSON: ");
-        ExportStrategy strat = "2".equals(scanner.nextLine())
+        ExportStrategy strat = "2".equals(scanner.nextLine().trim())
                 ? new JsonExportStrategy()
                 : new PlainTextExportStrategy();
-        System.out.print("Enter output file path: ");
-        String path = scanner.nextLine();
 
+        System.out.print("Enter output file path: ");
+        String path = scanner.nextLine().trim();
         new MenuExporter(strat).exportMenu(customMenu, path);
+
         scanner.close();
+    }
+
+    // Repeated utility for robust price input
+    private static double readPrice(Scanner sc, String prompt) {
+        while (true) {
+            System.out.print(prompt);
+            String line = sc.nextLine().trim();
+            try {
+                return Double.parseDouble(line);
+            } catch (NumberFormatException e) {
+                System.out.println("    → Invalid number. Try again.");
+            }
+        }
+    }
+
+    // Robust allergy input, warns on invalid codes
+    private static Set<Allergy> readAllergies(Scanner sc,
+                                              Map<String,Allergy> map) {
+        while (true) {
+            System.out.print("      Enter codes [A–E]: ");
+            String line = sc.nextLine().trim().toUpperCase();
+            if (line.isEmpty()) {
+                System.out.println("      → Please enter at least one code.");
+                continue;
+            }
+            String[] codes = line.split("\\s*,\\s*");
+            Set<Allergy> set = new HashSet<>();
+            boolean invalid = false;
+            boolean hasNone = false;
+
+            for (String c : codes) {
+                Allergy a = map.get(c);
+                if (a == null) {
+                    System.out.println("      → Invalid code: " + c);
+                    invalid = true;
+                } else if (a == Allergy.NONE) {
+                    hasNone = true;
+                } else {
+                    set.add(a);
+                }
+            }
+            if (invalid) {
+                // some code was not A–E
+                continue;
+            }
+            if (hasNone && !set.isEmpty()) {
+                // None cannot be combined
+                System.out.println("      → 'None' (E) cannot be combined with other codes.");
+                continue;
+            }
+            if (hasNone) {
+                return Collections.emptySet();
+            }
+            return set;
+        }
     }
 }

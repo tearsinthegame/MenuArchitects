@@ -9,6 +9,10 @@ import java.util.List;
 public class JsonExportStrategy implements ExportStrategy {
     @Override
     public void export(MenuComponent menu, String filePath) throws IOException {
+        if (!filePath.toLowerCase().endsWith(".json")) {
+            filePath += ".json";
+        }
+
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath))) {
             writer.write(componentToJson(menu, 0));
         }
